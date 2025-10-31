@@ -1,0 +1,41 @@
+name: enterprise-platform-bootstrap
+version: 0.1.0
+summary: Baseline infrastructure-as-code mono-repo for Azure landing zones and platform services
+maintainers:
+  - name: Cloud Engineering Team
+    email: cloud@example.com
+license: MIT
+tags:
+  - terraform
+  - azure
+  - devops
+  - packer
+  - ansible
+  - governance
+components:
+  terraform:
+    path: im/terraform
+    description: Management group governance, subscription provisioning, and hub-and-spoke network topology
+  packer:
+    path: common/packer/ws2025.json
+    description: Hardened Windows Server 2025 Azure Compute Gallery image template
+  pipelines:
+    path: .azure/pipelines/os-upgrade.yml
+    description: Multi-stage Azure DevOps pipeline for infrastructure changes
+  data:
+    path: datasets
+    description: Placeholder for governed datasets and schemas
+  etl:
+    path: etl/jobs
+    description: Extract-transform-load orchestration jobs
+  providers:
+    path: providers
+    description: Shared provider configuration and credentials glue code
+metadata:
+  azure:
+    management_group_root: "00000000-0000-0000-0000-000000000000"
+    policy_baseline: "Audit baseline and security policies"
+  compliance:
+    standards:
+      - NIST 800-53
+      - CIS Microsoft Azure Foundations Benchmark v1.5

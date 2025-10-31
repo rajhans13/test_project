@@ -1,0 +1,91 @@
+{
+  "variables": {
+    "subscription_id": "{{env `ARM_SUBSCRIPTION_ID`}}",
+    "client_id": "{{env `ARM_CLIENT_ID`}}",
+    "client_secret": "{{env `ARM_CLIENT_SECRET`}}",
+    "tenant_id": "{{env `ARM_TENANT_ID`}}",
+    "resource_group": "image-factory-rg",
+    "location": "eastus2",
+    "gallery_name": "corp-os-gallery",
+    "image_definition": "ws2025-hardened",
+    "image_version": "1.0.0"
+  },
+  "builders": [
+    {
+      "type": "azure-arm",
+      "subscription_id": "{{user `subscription_id`}}",
+      "client_id": "{{user `client_id`}}",
+      "client_secret": "{{user `client_secret`}}",
+      "tenant_id": "{{user `tenant_id`}}",
+      "managed_image_resource_group_name": "{{user `resource_group`}}",
+      "managed_image_name": "ws2025-hardened-base",
+      "os_type": "Windows",
+      "image_publisher": "MicrosoftWindowsServer",
+      "image_offer": "WindowsServer",
+      "image_sku": "2025-datacenter-azure-edition",
+      "communicator": "winrm",
+      "winrm_username": "packer",
+      "winrm_use_ssl": true,
+      "winrm_insecure": true,
+      "winrm_timeout": "30m",
+      "vm_size": "Standard_D4s_v5",
+      "azure_tags": {
+        "owner": "image-factory",
+        "hardening": "true"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "powershell",
+      "elevated_user": "packer",
+      "elevated_password": "{{ .WinRMPassword }}",
+      "inline": [
+        "Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force",
+        "Write-Host 'Installing Microsoft Defender for Endpoint'",
+        "Invoke-WebRequest -Uri https://go.microsoft.com/fwlink/?linkid=2156229 -OutFile C:\\Packages\\WindowsDefenderATPOnboardingPackage.zip",
+        "Expand-Archive -Path C:\\Packages\\WindowsDefenderATPOnboardingPackage.zip -DestinationPath C:\\Packages\\MDATP -Force",
+        "C:\\Packages\\MDATP\\WindowsDefenderATPOnboardingScript.cmd",
+        "Write-Host 'Installing Azure Monitor MMA agent'",
+        "$mmaUri = 'https://go.microsoft.com/fwlink/?LinkID=828603'",
+        "Invoke-WebRequest -Uri $mmaUri -OutFile C:\\Packages\\MMASetup-AMD64.exe",
+        "C:\\Packages\\MMASetup-AMD64.exe /qn ADD_OPINSIGHTS_WORKSPACE=1 OPINSIGHTS_WORKSPACE_ID=%OPINSIGHTS_WORKSPACE_ID% OPINSIGHTS_WORKSPACE_KEY=%OPINSIGHTS_WORKSPACE_KEY% AcceptEndUserLicenseAgreement=1",
+        "Write-Host 'Installing Azure Backup agent'",
+        "$mabUri = 'https://go.microsoft.com/fwlink/?linkid=2295256'",
+        "Invoke-WebRequest -Uri $mabUri -OutFile C:\\Packages\\MARSAgentInstaller.exe",
+        "C:\\Packages\\MARSAgentInstaller.exe /q",
+        "Write-Host 'Applying STIG baseline'",
+        "& C:\\Packages\\Hardening\\Apply-Stig.ps1 -Verbose"
+      ]
+    },
+    {
+      "type": "powershell",
+      "inline": [
+        "Write-Host 'Enabling Windows features required for Azure Arc'",
+        "Enable-WindowsOptionalFeature -Online -FeatureName NetFx3 -All -NoRestart",
+        "Write-Host 'Optimizing disk'",
+        "Optimize-Volume -DriveLetter C -ReTrim -Verbose"
+      ]
+    },
+    {
+      "type": "powershell",
+      "inline": [
+        "Write-Host 'Generalizing the image'",
+        "& sysprep /generalize /oobe /quit",
+        "Start-Sleep -Seconds 30"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "azure-arm",
+      "subscription_id": "{{user `subscription_id`}}",
+      "resource_group": "{{user `resource_group`}}",
+      "gallery_name": "{{user `gallery_name`}}",
+      "image_definition": "{{user `image_definition`}}",
+      "image_version": "{{user `image_version`}}",
+      "replication_regions": ["eastus2", "centralus"],
+      "storage_account": "imagefactorysa"
+    }
+  ]
+}
