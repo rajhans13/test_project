@@ -1,0 +1,202 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Logic App that delivers OS upgrade reports"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for the Logic App"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Workspace ID used to query upgrade status"
+      }
+    },
+    "aadTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD tenant that hosts the service principal"
+      }
+    },
+    "servicePrincipalClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Client ID of the service principal that can query Log Analytics"
+      }
+    },
+    "servicePrincipalClientSecret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Client secret for the service principal"
+      }
+    },
+    "emailRecipients": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "List of stakeholders to receive the upgrade report"
+      }
+    },
+    "emailSubjectPrefix": {
+      "type": "string",
+      "defaultValue": "OS Upgrade",
+      "metadata": {
+        "description": "Subject prefix for the upgrade report email"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "startTime": "2023-01-01T08:00:00Z",
+                "timeZone": "UTC"
+              }
+            }
+          },
+          "actions": {
+            "Get_Log_Analytics_Token": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://login.microsoftonline.com/@{parameters('aadTenantId')}/oauth2/token",
+                "body": "resource=https%3A%2F%2Fapi.loganalytics.io&client_id=@{parameters('servicePrincipalClientId')}&client_secret=@{parameters('servicePrincipalClientSecret')}&grant_type=client_credentials",
+                "headers": {
+                  "Content-Type": "application/x-www-form-urlencoded"
+                }
+              }
+            },
+            "Run_Log_Analytics_Query": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "https://api.loganalytics.io/v1/workspaces/@{encodeURIComponent(parameters('logAnalyticsWorkspaceId'))}/query",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer @{body('Get_Log_Analytics_Token')['access_token']}"
+                },
+                "body": {
+                  "query": "UpdateSummary | summarize Pending = sumif(Status == 'Needed', 1), Succeeded = sumif(Status == 'Succeeded', 1), Failed = sumif(Status == 'Failed', 1) by Computer",
+                  "timespan": "P1D"
+                }
+              },
+              "runAfter": {
+                "Get_Log_Analytics_Token": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Create_Report_Table": {
+              "type": "Table",
+              "inputs": {
+                "from": "@body('Run_Log_Analytics_Query')['tables'][0]['rows']",
+                "columns": [
+                  {
+                    "header": "Computer",
+                    "value": "@item()[0]"
+                  },
+                  {
+                    "header": "Pending",
+                    "value": "@item()[1]"
+                  },
+                  {
+                    "header": "Succeeded",
+                    "value": "@item()[2]"
+                  },
+                  {
+                    "header": "Failed",
+                    "value": "@item()[3]"
+                  }
+                ],
+                "format": "Html"
+              },
+              "runAfter": {
+                "Run_Log_Analytics_Query": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Compose_Metadata": {
+              "type": "Compose",
+              "inputs": {
+                "generatedOn": "@{utcNow()}",
+                "recordCount": "@{length(body('Run_Log_Analytics_Query')['tables'][0]['rows'])}"
+              },
+              "runAfter": {
+                "Create_Report_Table": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Send_Email": {
+              "type": "ApiConnection",
+              "inputs": {
+                "body": {
+                  "importance": "Normal",
+                  "subject": "@{concat(parameters('emailSubjectPrefix'), ' Status Report (', utcNow(), ')')}",
+                  "to": "@{join(parameters('emailRecipients'), ';')}",
+                  "body": "<p>Daily OS upgrade summary generated on @{outputs('Compose_Metadata')['generatedOn']} with @{outputs('Compose_Metadata')['recordCount']} machines.</p>@{outputs('Create_Report_Table')}"
+                },
+                "host": {
+                  "api": {
+                    "runtimeUrl": "https://logic-apis-westeurope.azure-apim.net/apim/office365"
+                  },
+                  "connection": {
+                    "name": "@parameters('$connections')['office365']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/v2/Mail"
+              },
+              "runAfter": {
+                "Compose_Metadata": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "office365": {
+                "connectionId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Web/connections/office365",
+                "connectionName": "office365",
+                "id": "/subscriptions/<subscription-id>/providers/Microsoft.Web/locations/<location>/managedApis/office365"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+trigger: none
+
+variables:
+  - group: os-upgrade-shared
+
+extends:
+  template: templates/os-upgrade-template.yml
+  parameters:
+    osImageId: $[variables['os_image_id']]
+    environment: $[variables['environment']]
