@@ -1,0 +1,16 @@
+{
+  "Machines": [
+    {
+      "fqdn": "app01.example.com",
+      "os": "Windows Server 2016",
+      "dependencyTargets": ["db01.example.com", "cache01.example.com"],
+      "application": "ClaimsPortal"
+    },
+    {
+      "fqdn": "app02.example.com",
+      "os": "Windows Server 2016",
+      "dependencyTargets": ["db01.example.com"],
+      "application": "BillingHub"
+    }
+  ]
+}

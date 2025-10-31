@@ -1,0 +1,16 @@
+{
+  "result": [
+    {
+      "sys_id": "1",
+      "fqdn": "app01.example.com",
+      "os": "Windows Server 2016",
+      "application": "ClaimsPortal"
+    },
+    {
+      "sys_id": "2",
+      "fqdn": "app02.example.com",
+      "os": "Windows Server 2016",
+      "application": "BillingHub"
+    }
+  ]
+}
