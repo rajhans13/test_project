@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/Application-Insights-Workbooks/master/schema/workbook.json",
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": {
+          "version": "KqlItem/1.0",
+          "query": "UpdateSummary | summarize Pending = sum(if(Status == 'Needed', 1, 0)), Succeeded = sum(if(Status == 'Succeeded', 1, 0)), Failed = sum(if(Status == 'Failed', 1, 0)) by Computer",
+          "size": 0,
+          "title": "OS Upgrade Status by Computer",
+          "queryType": 0,
+          "resourceType": "microsoft.operationalinsights/workspaces"
+        }
+      },
+      "name": "UpgradeStatus"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": {
+          "version": "KqlItem/1.0",
+          "query": "Heartbeat | summarize Online = countif(TimeGenerated > ago(15m)), Offline = countif(TimeGenerated <= ago(15m)) by Computer",
+          "size": 0,
+          "title": "Agent Health",
+          "queryType": 0,
+          "resourceType": "microsoft.operationalinsights/workspaces"
+        }
+      },
+      "name": "AgentHealth"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": {
+          "version": "KqlItem/1.0",
+          "query": "Perf | where ObjectName == 'Processor' and CounterName == '% Processor Time' | summarize avg(CounterValue) by Computer, bin(TimeGenerated, 1h)",
+          "size": 0,
+          "title": "Performance Trends",
+          "queryType": 0,
+          "resourceType": "microsoft.operationalinsights/workspaces",
+          "chartSettings": {
+            "chartType": 8,
+            "title": "CPU Trend"
+          }
+        }
+      },
+      "name": "PerformanceTrends"
+    }
+  ],
+  "timeContext": {
+    "durationMs": 604800000
+  },
+  "styleSettings": {
+    "expanded": true
+  }
+}

@@ -1,0 +1,37 @@
+parameters:
+  - name: osImageId
+    type: string
+  - name: environment
+    type: string
+
+stages:
+  - stage: Deploy
+    displayName: Deploy Operating System Upgrades
+    variables:
+      osImageId: ${{ parameters.osImageId }}
+      environment: ${{ parameters.environment }}
+    jobs:
+      - job: RunUpgrade
+        displayName: Run Upgrade Pipeline
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              echo "Preparing upgrade rollout for environment: $(environment)"
+              echo "Using OS image: $(osImageId)"
+          - task: AzureCLI@2
+            displayName: Execute upgrade deployment
+            inputs:
+              azureSubscription: $(service_connection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo "Triggering upgrade deployment for $(environment) with image $(osImageId)"
+                # Insert deployment commands here, for example az deployment group create ...
+          - task: PublishTestResults@2
+            displayName: Publish upgrade validation results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(System.DefaultWorkingDirectory)/artifacts/**/*.xml'
+              testRunTitle: 'OS Upgrade Validation - $(environment)'
