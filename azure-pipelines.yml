@@ -1,0 +1,77 @@
+trigger:
+  branches:
+    include:
+      - main
+      - refs/heads/releases/*
+
+stages:
+  - stage: build
+    displayName: Build
+    jobs:
+      - job: terraform_validation
+        displayName: Terraform quality gates
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: Bash@3
+            displayName: Install tooling
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                sudo apt-get update -y
+                sudo apt-get install -y unzip
+
+                TERRAFORM_VERSION="1.6.6"
+                curl -sLo terraform.zip "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+                sudo unzip -o terraform.zip -d /usr/local/bin
+
+                TFLINT_VERSION="0.51.1"
+                curl -sLo tflint.zip "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip"
+                sudo unzip -o tflint.zip -d /usr/local/bin
+
+                TERRAFORM_DOCS_VERSION="0.17.2"
+                curl -sLo terraform-docs.tar.gz "https://github.com/terraform-docs/terraform-docs/releases/download/v${TERRAFORM_DOCS_VERSION}/terraform-docs-v${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
+                tar -xzf terraform-docs.tar.gz
+                sudo mv terraform-docs /usr/local/bin/
+
+          - task: Bash@3
+            displayName: Terraform format
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                terraform fmt -check -recursive
+
+          - task: Bash@3
+            displayName: Terraform validate
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                terraform init -backend=false
+                terraform validate
+
+          - task: Bash@3
+            displayName: TFLint
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                tflint --init
+                tflint
+
+          - task: Bash@3
+            displayName: Terraform docs check
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                terraform-docs markdown table --output-file README.md --output-mode inject modules/network
+                terraform-docs markdown table --output-file README.md --output-mode inject modules/os_image
+                terraform-docs markdown table --output-file README.md --output-mode inject modules/vm_upgrade
+                if [[ -n "$(git status --porcelain)" ]]; then
+                  echo "terraform-docs generated changes. Commit updated documentation."
+                  git status --short
+                  exit 1
+                fi

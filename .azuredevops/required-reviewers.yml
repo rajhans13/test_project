@@ -1,0 +1,20 @@
+# Azure DevOps branch policy helper
+# Configure the Required Reviewers extension to read this manifest and enforce approvals.
+
+metadata:
+  description: Required reviewers for Terraform infrastructure changes
+  owner: platform-engineering
+
+scopes:
+  - match:
+      branch: main
+      paths:
+        - "*.tf"
+        - "modules/**"
+        - "azure-pipelines.yml"
+        - "env/**"
+    reviewers:
+      - name: "Platform-Security"
+        type: group
+      - name: "Cloud-Architecture"
+        type: group
