@@ -1,0 +1,29 @@
+---
+- name: Apply operating system hardening to golden images
+  hosts: windows
+  gather_facts: no
+  vars:
+    subscription_aliases: {}
+    firewall_policy_id: ""
+  tasks:
+    - name: Ensure Defender ATP service is running
+      win_service:
+        name: Sense
+        start_mode: auto
+        state: started
+
+    - name: Configure Windows Update automatic maintenance
+      win_regedit:
+        path: HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU
+        name: NoAutoUpdate
+        data: 0
+        type: dword
+
+    - name: Register machine to firewall policy tag
+      win_shell: |
+        Write-Host "Associating node with firewall policy {{ firewall_policy_id }}"
+        # Placeholder command for policy tagging
+
+    - name: Emit subscription metadata
+      win_shell: |
+        Write-Host "Subscriptions provisioned: {{ subscription_aliases | to_nice_json }}"
