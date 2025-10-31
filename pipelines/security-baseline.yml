@@ -1,0 +1,76 @@
+trigger:
+  branches:
+    include:
+      - main
+
+stages:
+  - stage: PolicyAssignments
+    displayName: "Deploy CPS Azure Policy Initiatives"
+    jobs:
+      - job: AssignPolicies
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: AzureCLI@2
+            displayName: "Assign CPS Policy Initiatives"
+            inputs:
+              azureSubscription: "Platform-Management"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az account set --subscription ${{ variables.CpsSubscriptionId }}
+                az policy assignment create \
+                  --name cps-encrypt-compute \
+                  --display-name "CPS-Encrypt-Compute" \
+                  --scope "/subscriptions/${{ variables.CpsSubscriptionId }}" \
+                  --policy-set-definition cps-encrypt-compute \
+                  --identity-type SystemAssigned \
+                  --location uksouth \
+                  --params @params/encrypt-compute.json
+                az policy assignment create \
+                  --name cps-patch-compliance \
+                  --display-name "CPS-Patch-Compliance" \
+                  --scope "/subscriptions/${{ variables.CpsSubscriptionId }}" \
+                  --policy-set-definition cps-patch-compliance \
+                  --identity-type SystemAssigned \
+                  --location uksouth \
+                  --params @params/patch-compliance.json
+
+  - stage: EnforceWindowsBaseline
+    displayName: "Enforce Windows Server 2025 Baseline"
+    dependsOn: PolicyAssignments
+    jobs:
+      - deployment: EnforceBaseline
+        environment: platform-secure
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzurePowerShell@5
+                  displayName: "Publish DSC Configuration"
+                  inputs:
+                    azureSubscription: "Platform-Automation"
+                    ScriptType: FilePath
+                    ScriptPath: "dsc/Apply-Windows2025Baseline.ps1"
+                    ScriptArguments: "-DomainName ${env:ManagedDomain} -BaselineVersion v1.0 -ConfigurationDataPath $(Pipeline.Workspace)/baseline"
+                    azurePowerShellVersion: LatestVersion
+                - task: ManualValidation@0
+                  displayName: "Security CAB Approval"
+                  inputs:
+                    notifyUsers: 'asuk-security-cab@contoso.com'
+                    instructions: 'Review the baseline deployment evidence and approve to continue.'
+                - task: AzurePowerShell@5
+                  displayName: "Start DSC Job"
+                  condition: and(succeeded(), eq(dependencies.ManualValidation.outputs['ManualValidation.ApprovalStatus'], 'Approved'))
+                  inputs:
+                    azureSubscription: "Platform-Automation"
+                    ScriptType: InlineScript
+                    Inline: |
+                      Start-AzAutomationDscCompilationJob -ResourceGroupName $(AutomationRg) -AutomationAccountName $(AutomationAccount) -ConfigurationName 'ApplyWindows2025Baseline'
+                    azurePowerShellVersion: LatestVersion
+
+variables:
+  CpsSubscriptionId: ''
+  AutomationRg: ''
+  AutomationAccount: ''
