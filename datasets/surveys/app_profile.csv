@@ -1,0 +1,3 @@
+application,criticality,rto_hours,rpo_hours,testing_scope
+ClaimsPortal,High,4,1,Full regression
+BillingHub,Medium,12,4,Smoke
