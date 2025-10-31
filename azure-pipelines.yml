@@ -1,0 +1,117 @@
+trigger:
+  branches:
+    include:
+      - release/v2025.*
+
+variables:
+  terraformVersion: '1.6.6'
+  waveOutcome: 'success'
+  ticketId: ''
+  runApply: 'false'
+  azureServiceConnection: 'azure-devops-service-connection'
+  keyVaultName: 'tfstate-shared-kv'
+  stateAccessKeySecretName: 'tfstatestoragekey'
+  stateResourceGroup: 'rg-terraform-state'
+  stateStorageAccount: 'stterraformstate'
+  stateContainer: 'tfstate'
+  stateKey: 'global/terraform.tfstate'
+
+stages:
+  - stage: release
+    displayName: 'Release wave execution'
+    jobs:
+      - job: release_wave
+        displayName: 'Provision infrastructure and tag wave'
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - bash: |
+              set -euo pipefail
+              branch="$(Build.SourceBranch)"
+              if [[ "$branch" != refs/heads/release/v2025.* ]]; then
+                echo "##vso[task.logissue type=error]This pipeline only runs for release/v2025.x branches."
+                exit 1
+              fi
+              wave="${branch#refs/heads/release/v2025.}"
+              if [[ -z "$wave" ]]; then
+                echo "##vso[task.logissue type=error]Unable to determine wave number from branch ${branch}."
+                exit 1
+              fi
+              echo "##vso[task.setvariable variable=branchWave]$wave"
+
+              if [[ -z "$(ticketId)" ]]; then
+                echo "##vso[task.logissue type=error]Define the ticketId variable before running the pipeline."
+                exit 1
+              fi
+
+              if [[ -z "$(waveOutcome)" ]]; then
+                echo "##vso[task.logissue type=error]Define waveOutcome (e.g. success/rollback)."
+                exit 1
+              fi
+            displayName: 'Validate release branch context'
+
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - task: AzureKeyVault@2
+            displayName: 'Retrieve Terraform backend secrets'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              KeyVaultName: '$(keyVaultName)'
+              SecretsFilter: '$(stateAccessKeySecretName)'
+              RunAsPreJob: false
+
+          - bash: |
+              set -euo pipefail
+              cat <<BACKEND > backend.hcl
+              resource_group_name  = "$(stateResourceGroup)"
+              storage_account_name = "$(stateStorageAccount)"
+              container_name       = "$(stateContainer)"
+              key                  = "$(stateKey)"
+              BACKEND
+            displayName: 'Render backend configuration'
+
+          - bash: |
+              set -euo pipefail
+              terraform init \
+                -backend-config=backend.hcl
+            displayName: 'Terraform init (Azure Blob backend with locking)'
+            env:
+              ARM_ACCESS_KEY: $(tfstatestoragekey)
+
+          - bash: |
+              set -euo pipefail
+              terraform validate
+            displayName: 'Terraform validate'
+
+          - bash: |
+              set -euo pipefail
+              terraform plan -out=tfplan
+            displayName: 'Terraform plan'
+            env:
+              ARM_ACCESS_KEY: $(tfstatestoragekey)
+
+          - bash: |
+              set -euo pipefail
+              terraform apply -auto-approve tfplan
+            condition: and(succeeded(), eq(variables.runApply, 'true'))
+            displayName: 'Terraform apply (optional)'
+            env:
+              ARM_ACCESS_KEY: $(tfstatestoragekey)
+
+          - bash: |
+              rm -f backend.hcl tfplan
+            displayName: 'Cleanup backend artifacts'
+            condition: always()
+
+          - task: GitTag@1
+            displayName: 'Annotate repository with wave tag'
+            condition: and(succeeded(), ne(variables.waveOutcome, ''), ne(variables.ticketId, ''))
+            inputs:
+              repository: 'self'
+              tag: 'wave-$(branchWave)-$(waveOutcome)'
+              objectId: '$(Build.SourceVersion)'
+              annotationMessage: 'Wave $(branchWave) $(waveOutcome) [$(ticketId)]'
+              force: true

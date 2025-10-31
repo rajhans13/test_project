@@ -5,6 +5,10 @@
       version = "~> 3.0"\
     \}\
   \}\
+  backend "azurerm" \{\
+    # Backend values are supplied by the Azure DevOps pipeline via backend.hcl\
+    # to ensure state locking using Azure Blob leases.\
+  \}\
 \}\
 \
 # Configure the AWS Provider\
