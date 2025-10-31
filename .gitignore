@@ -1,0 +1,9 @@
+# Terraform artifacts
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+crash.log
+
+# Pipeline generated files
+backend.hcl
+tfplan
